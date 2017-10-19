@@ -1,0 +1,6 @@
+pyaml==15.8.2
+numpy==1.12.0
+scipy==0.15.0
+opencv-python==3.1.0
+rh_config==1.0.0
+rh_logger==2.0.0
