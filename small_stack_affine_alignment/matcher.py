@@ -1,8 +1,8 @@
 import numpy as np
-import ransac
+from . import ransac
 #from scipy.spatial import KDTree
 from collections import defaultdict
-import models
+from . import models
 
 #NEIGHBORHOOD_RADIUS = 70
 GRID_SIZE = 50

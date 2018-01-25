@@ -10,8 +10,8 @@ from rh_logger.api import logger
 import logging
 import rh_logger
 import time
-from detector import FeaturesDetector
-from matcher import FeaturesMatcher
+from .detector import FeaturesDetector
+from .matcher import FeaturesMatcher
 import multiprocessing as mp
 
 class StackAligner(object):
@@ -77,7 +77,6 @@ class StackAligner(object):
         #pool = mp.Pool(processes=processes_num)
 
         # Compute features
-        logger.start_process('align_imgs', 'aligner.py', [len(imgs), self._conf])
         logger.report_event("Computing features...", log_level=logging.INFO)
         st_time = time.time()
         all_features = []
@@ -120,7 +119,6 @@ class StackAligner(object):
         #pool.close()
         #pool.join()
 
-        logger.end_process('align_imgs ending', rh_logger.ExitCode(0))
         return transforms
 
 
@@ -141,6 +139,7 @@ if __name__ == '__main__':
     out_path = './output_imgs'
     processes_num = 8
 
+    logger.start_process('main', 'aligner.py', [imgs_dir, conf_fname, out_path, processes_num])
     conf = StackAligner.load_conf_from_file(conf_fname)
     transforms = StackAligner.align_img_files(imgs_dir, conf, processes_num)
 
@@ -156,3 +155,4 @@ if __name__ == '__main__':
         img_transformed = cv2.warpAffine(img, transform[:2,:], (img.shape[1], img.shape[0]), flags=cv2.INTER_AREA)
         cv2.imwrite(out_fname, img_transformed)
 
+    logger.end_process('align_imgs ending', rh_logger.ExitCode(0))
