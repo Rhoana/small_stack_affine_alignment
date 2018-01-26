@@ -12,6 +12,7 @@ detector_params:
 #    type: SIFT
 
 matcher_params:
+    grid_width: 50
     ROD_cutoff: 0.9
     model_index: 3 # 0 - Translation, 1 - Rigid, 3 - Affine
     #num_filtered_percent: 0.1

@@ -160,7 +160,7 @@ if __name__ == '__main__':
     imgs_dir = '/n/coxfs01/paragt/Adi/R0/images_margin'
     conf_fname = '../conf_example.yaml'
     out_path = './output_imgs'
-    processes_num = 1
+    processes_num = 8
 
     logger.start_process('main', 'aligner.py', [imgs_dir, conf_fname, out_path, processes_num])
     conf = StackAligner.load_conf_from_file(conf_fname)

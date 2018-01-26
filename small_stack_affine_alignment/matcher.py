@@ -4,8 +4,6 @@ from . import ransac
 from collections import defaultdict
 from . import models
 
-#NEIGHBORHOOD_RADIUS = 70
-GRID_SIZE = 50
 
 class FeaturesMatcher(object):
 
@@ -18,6 +16,7 @@ class FeaturesMatcher(object):
         #self._params["filter_rate_cutoff"] = kwargs.get("filter_rate_cutoff", 0.25)
         self._params["ROD_cutoff"] = kwargs.get("ROD_cutoff", 0.92)
         self._params["min_features_num"] = kwargs.get("min_features_num", 40)
+        self._params["grid_width"] = kwargs.get("grid_width", -1)
 
         # Parameters for the RANSAC
         self._params["model_index"] = kwargs.get("model_index", 3)
@@ -37,38 +36,47 @@ class FeaturesMatcher(object):
     def match(self, features_kps1, features_descs1, features_kps2, features_descs2):
         features_kps2 = np.asarray(features_kps2)
 
-        # because the sections were already pre-aligned, we only match a feature in section1 to its neighborhood in section2 (according to a grid)
-        grid = defaultdict(set)
-
-        # build the grid of the feature locations in the second section
-        for i, kp2 in enumerate(features_kps2):
-            pt_grid = (np.array(kp2.pt) / GRID_SIZE).astype(np.int)
-            grid[tuple(pt_grid)].add(i)
-
         match_points = [[], [], []]
-        for kp1, desc1 in zip(features_kps1, features_descs1):
-            # For each kp1 find the closest points in section2
-            pt_grid = (np.array(kp1.pt) / GRID_SIZE).astype(np.int)
-            close_kps2_idxs = set()
-            # search in a [-1, -1] -> [1, 1] delta windows (3*3)
-            for delta_y in range(-1, 2):
-                for delta_x in range(-1, 2):
-                    delta = np.array([delta_x, delta_y], dtype=np.int)
-                    delta_grid_loc = tuple(pt_grid + delta)
-                    if delta_grid_loc in grid.keys():
-                        close_kps2_idxs |= grid[delta_grid_loc]
+        if self._params["grid_width"] <= 0:
+            # No grid, compare all to all
+            features_kps1 = np.asarray(features_kps1)
 
-            close_kps2_indices = list(close_kps2_idxs)
-            close_descs2 = features_descs2[close_kps2_indices]
-            matches = self._matcher.knnMatch(desc1.reshape(1, len(desc1)), close_descs2, k=2)
-            if len(matches[0]) == 2:
-                if matches[0][0].distance < self._params["ROD_cutoff"] * matches[0][1].distance:
-                    match_points[0].append(kp1.pt)
-                    match_points[1].append(features_kps2[close_kps2_indices][matches[0][0].trainIdx].pt)
-                    match_points[2].append(matches[0][0].distance)
+            matches = self._matcher.knnMatch(features_descs1, features_descs2, k=2)
+            for m, n in matches:
+                if m.distance < self._params["ROD_cutoff"] * n.distance:
+                    match_points[0].append(features_kps1[m.queryIdx].pt)
+                    match_points[1].append(features_kps2[m.trainIdx].pt)
+                    match_points[2].append(m.distance)
+        else:
+            # For sections that were already pre-aligned, we only match a feature in section1 to its neighborhood in section2 (according to a grid)
+            grid = defaultdict(set)
 
-       
-            
+            # build the grid of the feature locations in the second section
+            for i, kp2 in enumerate(features_kps2):
+                pt_grid = (np.array(kp2.pt) / self._params["grid_width"]).astype(np.int)
+                grid[tuple(pt_grid)].add(i)
+
+            for kp1, desc1 in zip(features_kps1, features_descs1):
+                # For each kp1 find the closest points in section2
+                pt_grid = (np.array(kp1.pt) / self._params["grid_width"]).astype(np.int)
+                close_kps2_idxs = set()
+                # search in a [-1, -1] -> [1, 1] delta windows (3*3)
+                for delta_y in range(-1, 2):
+                    for delta_x in range(-1, 2):
+                        delta = np.array([delta_x, delta_y], dtype=np.int)
+                        delta_grid_loc = tuple(pt_grid + delta)
+                        if delta_grid_loc in grid.keys():
+                            close_kps2_idxs |= grid[delta_grid_loc]
+
+                close_kps2_indices = list(close_kps2_idxs)
+                close_descs2 = features_descs2[close_kps2_indices]
+                matches = self._matcher.knnMatch(desc1.reshape(1, len(desc1)), close_descs2, k=2)
+                if len(matches[0]) == 2:
+                    if matches[0][0].distance < self._params["ROD_cutoff"] * matches[0][1].distance:
+                        match_points[0].append(kp1.pt)
+                        match_points[1].append(features_kps2[close_kps2_indices][matches[0][0].trainIdx].pt)
+                        match_points[2].append(matches[0][0].distance)
+
 
 #         # because the sections were already pre-aligned, we only match a feature in section1 to its neighborhood in section2
 #         features_kps2_pts = [kp.pt for kp in features_kps2]
