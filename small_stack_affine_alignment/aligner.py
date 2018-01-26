@@ -1,5 +1,3 @@
-#from rh_renderer import models
-#from rh_aligner.common import ransac
 import sys
 import os
 import glob
@@ -10,9 +8,18 @@ from rh_logger.api import logger
 import logging
 import rh_logger
 import time
-from .detector import FeaturesDetector
-from .matcher import FeaturesMatcher
+from small_stack_affine_alignment.detector import FeaturesDetector
+from small_stack_affine_alignment.matcher import FeaturesMatcher
 import multiprocessing as mp
+import copyreg
+
+# Getting a keypoint serializer/deserializer
+def _keypoint_pickle(kp):
+    return cv2.KeyPoint, (kp.pt[0], kp.pt[1], kp.size, kp.angle, kp.response, kp.octave, kp.class_id)
+def _keypoint_unpickle(ctor, *args):
+    return ctor(*args)
+copyreg.pickle(type(cv2.KeyPoint()), _keypoint_pickle, _keypoint_unpickle)
+
 
 class StackAligner(object):
 
@@ -20,13 +27,10 @@ class StackAligner(object):
         self._conf = conf
 
         # Initialize the detector, amtcher and optimizer objects
-        detector_params = conf.get('detector_params', {})
-        matcher_params = conf.get('matcher_params', {})
-        self._detector = FeaturesDetector(conf['detector_type'], **detector_params)
-        self._matcher = FeaturesMatcher(self._detector, **matcher_params)
+        self._detector_params = conf.get('detector_params', {})
+        self._matcher_params = conf.get('matcher_params', {})
 
         self._processes_num = processes_num
-
 
 
     @staticmethod
@@ -55,14 +59,26 @@ class StackAligner(object):
         return np.sqrt(s)
 
     @staticmethod
-    def _compute_features(detector, img, i):
-        result = detector.detect(img)
+    def _compute_features_init(detector_type, detector_params):
+        global _detector
+        _detector = FeaturesDetector(detector_type, **detector_params)
+
+    @staticmethod
+    def _compute_features(img, i):
+        global _detector
+        result = _detector.detect(img)
         logger.report_event("Img {}, found {} features.".format(i, len(result[0])), log_level=logging.INFO)
         return result
 
     @staticmethod
+    def _match_features_init(matcher_init_fn, matcher_params):
+        global _matcher
+        _matcher = FeaturesMatcher(matcher_init_fn, **matcher_params)
+
+    @staticmethod
     def _match_features(features_result1, features_result2, i, j):
-        transform_model, filtered_matches = self._matcher.match_and_filter(*features_result1, *features_result2)
+        global _matcher
+        transform_model, filtered_matches = _matcher.match_and_filter(*features_result1, *features_result2)
         assert(transform_model is not None)
         transform_matrix = transform_model.get_matrix()
         logger.report_event("Imgs {} -> {}, found the following transformations\n{}\nAnd the average displacement: {} px".format(i, j, transform_matrix, np.mean(StackAligner._compute_l2_distance(transform_model.apply(filtered_matches[1]), filtered_matches[0]))), log_level=logging.INFO)
@@ -74,33 +90,42 @@ class StackAligner(object):
         Receives a stack of images to align and aligns that stack using the first image as an anchor
         '''
 
-        #pool = mp.Pool(processes=processes_num)
 
         # Compute features
         logger.report_event("Computing features...", log_level=logging.INFO)
         st_time = time.time()
         all_features = []
+
+        features_comp_pool = mp.Pool(processes=self._processes_num, initializer=StackAligner._compute_features_init, initargs=(self._conf['detector_type'], self._detector_params))
         pool_results = []
+        
         for i, img in enumerate(imgs):
-            #res = pool.apply_async(StackAligner._compute_features, (self._detector, img, i))
-            #pool_results.append(res)
-            all_features.append(self._detector.detect(img))
-            logger.report_event("Img {}, found {} features.".format(i, len(all_features[-1][0])), log_level=logging.INFO)
+            res = features_comp_pool.apply_async(StackAligner._compute_features, (img, i))
+            pool_results.append(res)
         for res in pool_results:
             all_features.append(res.get())
+
+        features_comp_pool.close()
+        features_comp_pool.join()
         logger.report_event("Features computation took {} seconds.".format(time.time() - st_time), log_level=logging.INFO)
 
+
+        sample_detector = FeaturesDetector(self._conf['detector_type'], **self._detector_params)
+        features_match_pool = mp.Pool(processes=self._processes_num, initializer=StackAligner._match_features_init, initargs=(sample_detector.matcher_init_fn, self._matcher_params))
+        pool_results = []
         # match features of adjacent images
         logger.report_event("Pair-wise feature mathcing...", log_level=logging.INFO)
         st_time = time.time()
         pairwise_transforms = []
         for i in range(len(imgs) - 1):
-            transform_model, filtered_matches = self._matcher.match_and_filter(*all_features[i + 1], *all_features[i])
-            assert(transform_model is not None)
-            transform_matrix = transform_model.get_matrix()
-            pairwise_transforms.append(transform_matrix)
-            logger.report_event("Imgs {} -> {}, found the following transformations\n{}\nAnd the average displacement: {} px".format(i, i+1, transform_matrix, np.mean(StackAligner._compute_l2_distance(transform_model.apply(filtered_matches[1]), filtered_matches[0]))), log_level=logging.INFO)
+            res = features_match_pool.apply_async(StackAligner._match_features, (all_features[i + 1], all_features[i], i+1, i))
+            pool_results.append(res)
+        for res in pool_results:
+            pairwise_transforms.append(res.get())
+        features_match_pool.close()
+        features_match_pool.join()
         logger.report_event("Feature matching took {} seconds.".format(time.time() - st_time), log_level=logging.INFO)
+
 
         # Compute the per-image transformation (all images will be aligned to the first section)
         logger.report_event("Computing transformations...", log_level=logging.INFO)
@@ -116,8 +141,6 @@ class StackAligner(object):
 
         assert(len(imgs) == len(transforms))
 
-        #pool.close()
-        #pool.join()
 
         return transforms
 
@@ -137,7 +160,7 @@ if __name__ == '__main__':
     imgs_dir = '/n/coxfs01/paragt/Adi/R0/images_margin'
     conf_fname = '../conf_example.yaml'
     out_path = './output_imgs'
-    processes_num = 8
+    processes_num = 1
 
     logger.start_process('main', 'aligner.py', [imgs_dir, conf_fname, out_path, processes_num])
     conf = StackAligner.load_conf_from_file(conf_fname)

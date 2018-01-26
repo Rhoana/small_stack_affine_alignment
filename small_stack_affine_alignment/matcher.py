@@ -9,8 +9,8 @@ GRID_SIZE = 50
 
 class FeaturesMatcher(object):
 
-    def __init__(self, detector, **kwargs):
-        self._detector = detector
+    def __init__(self, matcher_init_fn, **kwargs):
+        self._matcher = matcher_init_fn()
 
         self._params = {}
         # get default values if no value is present in kwargs
@@ -60,7 +60,7 @@ class FeaturesMatcher(object):
 
             close_kps2_indices = list(close_kps2_idxs)
             close_descs2 = features_descs2[close_kps2_indices]
-            matches = self._detector.match(desc1.reshape(1, len(desc1)), close_descs2)
+            matches = self._matcher.knnMatch(desc1.reshape(1, len(desc1)), close_descs2, k=2)
             if len(matches[0]) == 2:
                 if matches[0][0].distance < self._params["ROD_cutoff"] * matches[0][1].distance:
                     match_points[0].append(kp1.pt)
