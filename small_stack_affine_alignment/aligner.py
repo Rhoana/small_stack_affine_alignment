@@ -35,7 +35,8 @@ class StackAligner(object):
 
     @staticmethod
     def read_imgs(folder):
-        img_fnames = sorted(glob.glob(os.path.join(folder, '*')))[:10]
+        #img_fnames = sorted(glob.glob(os.path.join(folder, '*')))[:10]
+        img_fnames = sorted(glob.glob(os.path.join(folder, '*')))
         print("Loading {} images from {}.".format(len(img_fnames), folder))
         imgs = [cv2.imread(img_fname, 0) for img_fname in img_fnames]
         return img_fnames, imgs

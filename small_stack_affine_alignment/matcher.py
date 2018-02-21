@@ -27,6 +27,8 @@ class FeaturesMatcher(object):
         self._params["max_trust"] = kwargs.get("max_trust", 3)
         self._params["det_delta"] = kwargs.get("det_delta", 0.9)
         self._params["max_stretch"] = kwargs.get("max_stretch", 0.25)
+        #self._params["avoid_robust_filter"] = "avoid_robust_filter" in kwargs.keys()
+        self._params["avoid_robust_filter"] = kwargs.get("avoid_robust_filter", False)
 
         self._params["use_regularizer"] = True if "use_regularizer" in kwargs.keys() else False
         self._params["regularizer_lambda"] = kwargs.get("regularizer_lambda", 0.1)
@@ -118,7 +120,8 @@ class FeaturesMatcher(object):
 
         model, filtered_matches = ransac.filter_matches(match_points, match_points, self._params['model_index'],
                     self._params['iterations'], self._params['max_epsilon'], self._params['min_inlier_ratio'],
-                    self._params['min_num_inlier'], self._params['max_trust'], self._params['det_delta'], self._params['max_stretch'])
+                    self._params['min_num_inlier'], self._params['max_trust'], self._params['det_delta'], self._params['max_stretch'],
+                    robust_filter=not self._params["avoid_robust_filter"])
 
         if model is None:
             return None, None
@@ -126,7 +129,8 @@ class FeaturesMatcher(object):
         if self._params["use_regularizer"]:
             regularizer_model, _ = ransac.filter_matches(match_points, match_points, self._params['regularizer_model_index'],
                         self._params['iterations'], self._params['max_epsilon'], self._params['min_inlier_ratio'],
-                        self._params['min_num_inlier'], self._params['max_trust'], self._params['det_delta'], self._params['max_stretch'])
+                        self._params['min_num_inlier'], self._params['max_trust'], self._params['det_delta'], self._params['max_stretch'],
+                        robust_filter=not self._params["avoid_robust_filter"])
 
             if regularizer_model is None:
                 return None, None
